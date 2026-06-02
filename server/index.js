@@ -207,6 +207,112 @@ app.delete('/api/staff/:staffId', async (req, res) => {
   }
 });
 
+// ============ CUSTOMER BOOKING ============
+
+// Get business details by ID (for public booking page)
+app.get('/api/public/business/:businessId', async (req, res) => {
+  const { businessId } = req.params;
+  
+  try {
+    const business = await getQuery(
+      'SELECT id, business_name FROM businesses WHERE id = ?',
+      [businessId]
+    );
+    
+    if (!business) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+    
+    // Get services for this business
+    const services = await allQuery(
+      'SELECT id, name, duration_minutes, price FROM services WHERE business_id = ?',
+      [businessId]
+    );
+    
+    // Get staff for this business
+    const staff = await allQuery(
+      'SELECT id, name, role FROM staff WHERE business_id = ?',
+      [businessId]
+    );
+    
+    res.json({
+      business: business,
+      services: services,
+      staff: staff
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Create a new appointment (public booking)
+app.post('/api/public/appointments', async (req, res) => {
+  const { businessId, serviceId, staffId, customerName, customerPhone, date, time } = req.body;
+  
+  if (!businessId || !serviceId || !customerName || !date || !time) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  try {
+    // Check if slot is already booked
+    const existingAppointment = await getQuery(
+      'SELECT id FROM appointments WHERE business_id = ? AND staff_id = ? AND date = ? AND time = ? AND status != "cancelled"',
+      [businessId, staffId || null, date, time]
+    );
+    
+    if (existingAppointment) {
+      return res.status(409).json({ error: 'This time slot is already booked. Please choose another time.' });
+    }
+    
+    const result = await runQuery(
+      `INSERT INTO appointments (business_id, service_id, staff_id, customer_name, customer_phone, date, time, status) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmed')`,
+      [businessId, serviceId, staffId || null, customerName, customerPhone || null, date, time]
+    );
+    
+    res.status(201).json({ 
+      message: 'Appointment booked successfully!',
+      appointmentId: result.lastID,
+      bookingDetails: { customerName, date, time }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get available time slots for a business (simplified for MVP)
+app.get('/api/public/available-slots/:businessId', async (req, res) => {
+  const { businessId } = req.params;
+  const { date } = req.query;
+  
+  if (!date) {
+    return res.status(400).json({ error: 'Date is required' });
+  }
+  
+  try {
+    // Get all booked times for this date
+    const bookedAppointments = await allQuery(
+      'SELECT time FROM appointments WHERE business_id = ? AND date = ? AND status != "cancelled"',
+      [businessId, date]
+    );
+    
+    const bookedTimes = bookedAppointments.map(a => a.time);
+    
+    // Generate available time slots (9 AM to 6 PM, hourly)
+    const allTimeSlots = [];
+    for (let hour = 9; hour <= 17; hour++) {
+      const timeSlot = `${hour.toString().padStart(2, '0')}:00:00`;
+      if (!bookedTimes.includes(timeSlot)) {
+        allTimeSlots.push(timeSlot.substring(0, 5)); // Format as "HH:MM"
+      }
+    }
+    
+    res.json({ availableSlots: allTimeSlots });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
