@@ -143,6 +143,70 @@ app.get('/', (req, res) => {
   res.send('QueueMate API is running with SQLite');
 });
 
+// ============ STAFF MANAGEMENT ============
+
+// Get all staff for a business
+app.get('/api/staff/:businessId', async (req, res) => {
+  const { businessId } = req.params;
+  
+  try {
+    const staff = await allQuery(
+      'SELECT * FROM staff WHERE business_id = ? ORDER BY created_at DESC',
+      [businessId]
+    );
+    res.json(staff);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add a new staff member
+app.post('/api/staff', async (req, res) => {
+  const { businessId, name, role } = req.body;
+  
+  if (!businessId || !name) {
+    return res.status(400).json({ error: 'Business ID and name are required' });
+  }
+  
+  try {
+    const result = await runQuery(
+      'INSERT INTO staff (business_id, name, role) VALUES (?, ?, ?)',
+      [businessId, name, role || null]
+    );
+    res.status(201).json({ message: 'Staff added', staffId: result.lastID });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update a staff member
+app.put('/api/staff/:staffId', async (req, res) => {
+  const { staffId } = req.params;
+  const { name, role } = req.body;
+  
+  try {
+    await runQuery(
+      'UPDATE staff SET name = ?, role = ? WHERE id = ?',
+      [name, role || null, staffId]
+    );
+    res.json({ message: 'Staff updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete a staff member
+app.delete('/api/staff/:staffId', async (req, res) => {
+  const { staffId } = req.params;
+  
+  try {
+    await runQuery('DELETE FROM staff WHERE id = ?', [staffId]);
+    res.json({ message: 'Staff deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

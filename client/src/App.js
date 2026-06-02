@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Register from './components/Register';
 import Login from './components/Login';
 import ServiceManagement from './components/ServiceManagement';
+import StaffManagement from './components/StaffManagement';
 import './App.css';
 
 function App() {
@@ -37,6 +38,9 @@ function App() {
             <button onClick={() => setActiveTab('services')} style={tabButtonStyle(activeTab === 'services')}>
               Services
             </button>
+            <button onClick={() => setActiveTab('staff')} style={tabButtonStyle(activeTab === 'staff')}>
+              Staff
+            </button>
             <button onClick={handleLogout} style={{ ...tabButtonStyle(false), backgroundColor: '#dc3545', color: 'white' }}>
               Logout
             </button>
@@ -48,10 +52,11 @@ function App() {
             <div>
               <h2>Business Dashboard</h2>
               <p>Business ID: {businessId}</p>
-              <p>Welcome to QueueMate! Use the tabs above to manage your services and appointments.</p>
+              <p>Welcome to QueueMate! Use the tabs above to manage your services, staff, and appointments.</p>
               <hr />
               <h3>Quick Stats</h3>
               <p>✅ Services: Use the Services tab to add your offerings</p>
+              <p>👥 Staff: Use the Staff tab to add team members</p>
               <p>📅 Appointments: Coming soon</p>
               <p>🎫 Queue Management: Coming soon</p>
             </div>
@@ -59,6 +64,10 @@ function App() {
           
           {activeTab === 'services' && (
             <ServiceManagement businessId={businessId} />
+          )}
+          
+          {activeTab === 'staff' && (
+            <StaffManagement businessId={businessId} />
           )}
         </div>
       </div>
