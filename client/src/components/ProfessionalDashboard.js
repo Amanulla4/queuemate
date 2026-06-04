@@ -12,11 +12,14 @@ import {
   SparklesIcon,
   BuildingStorefrontIcon,
   PhoneIcon,
-  EnvelopeIcon
+  EnvelopeIcon,
+  UserGroupIcon
 } from '@heroicons/react/24/outline';
 import ServiceManagement from './ServiceManagement';
 import StaffManagement from './StaffManagement';
 import CustomerBooking from './CustomerBooking';
+import AppointmentCalendar from './AppointmentCalendar';
+import QueueManagement from './QueueManagement';
 
 const ProfessionalDashboard = ({ businessId, businessName, onLogout }) => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -33,6 +36,8 @@ const ProfessionalDashboard = ({ businessId, businessName, onLogout }) => {
     { name: 'Overview', id: 'overview', icon: HomeIcon, description: 'Business insights & metrics' },
     { name: 'Services', id: 'services', icon: CalendarIcon, description: 'Manage your offerings' },
     { name: 'Staff', id: 'staff', icon: UsersIcon, description: 'Team management' },
+    { name: 'Appointments', id: 'appointments', icon: ClockIcon, description: 'View & manage bookings' },
+    { name: 'Queue', id: 'queue', icon: UserGroupIcon, description: 'Walk-in queue management' },
     { name: 'Booking Link', id: 'booking', icon: LinkIcon, description: 'Share with customers' },
   ];
 
@@ -275,6 +280,30 @@ const ProfessionalDashboard = ({ businessId, businessName, onLogout }) => {
               className="bg-white rounded-2xl shadow-sm border border-gray-100"
             >
               <StaffManagement businessId={businessId} />
+            </motion.div>
+          )}
+
+          {activeTab === 'appointments' && (
+            <motion.div
+              key="appointments"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-white rounded-2xl shadow-sm border border-gray-100"
+            >
+              <AppointmentCalendar businessId={businessId} />
+            </motion.div>
+          )}
+
+          {activeTab === 'queue' && (
+            <motion.div
+              key="queue"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-white rounded-2xl shadow-sm border border-gray-100"
+            >
+              <QueueManagement businessId={businessId} />
             </motion.div>
           )}
 

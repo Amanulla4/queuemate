@@ -313,6 +313,253 @@ app.get('/api/public/available-slots/:businessId', async (req, res) => {
   }
 });
 
+// ============ APPOINTMENT MANAGEMENT ============
+
+// Get all appointments for a business
+app.get('/api/appointments/:businessId', async (req, res) => {
+  const { businessId } = req.params;
+  const { startDate, endDate } = req.query;
+  
+  try {
+    let query = `
+      SELECT a.*, s.name as service_name, st.name as staff_name 
+      FROM appointments a
+      LEFT JOIN services s ON a.service_id = s.id
+      LEFT JOIN staff st ON a.staff_id = st.id
+      WHERE a.business_id = ?
+    `;
+    let params = [businessId];
+    
+    if (startDate && endDate) {
+      query += ` AND a.date BETWEEN ? AND ?`;
+      params.push(startDate, endDate);
+    }
+    
+    query += ` ORDER BY a.date ASC, a.time ASC`;
+    
+    const appointments = await allQuery(query, params);
+    res.json(appointments);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update appointment status
+app.put('/api/appointments/:appointmentId/status', async (req, res) => {
+  const { appointmentId } = req.params;
+  const { status } = req.body;
+  
+  const validStatuses = ['confirmed', 'completed', 'cancelled', 'no-show'];
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+  
+  try {
+    await runQuery(
+      'UPDATE appointments SET status = ? WHERE id = ?',
+      [status, appointmentId]
+    );
+    res.json({ message: 'Appointment status updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get appointment by ID
+app.get('/api/appointments/details/:appointmentId', async (req, res) => {
+  const { appointmentId } = req.params;
+  
+  try {
+    const appointment = await getQuery(`
+      SELECT a.*, s.name as service_name, s.duration_minutes, s.price,
+             st.name as staff_name, b.business_name
+      FROM appointments a
+      LEFT JOIN services s ON a.service_id = s.id
+      LEFT JOIN staff st ON a.staff_id = st.id
+      LEFT JOIN businesses b ON a.business_id = b.id
+      WHERE a.id = ?
+    `, [appointmentId]);
+    
+    if (!appointment) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+    res.json(appointment);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============ QUEUE/TOKEN SYSTEM ============
+
+// Get current queue for a business
+app.get('/api/queue/:businessId', async (req, res) => {
+  const { businessId } = req.params;
+  
+  try {
+    // Get all waiting tokens
+    const waitingTokens = await allQuery(
+      `SELECT * FROM queue_tokens 
+       WHERE business_id = ? AND status = 'waiting' 
+       ORDER BY token_number ASC`,
+      [businessId]
+    );
+    
+    // Get currently serving token
+    const servingToken = await getQuery(
+      `SELECT * FROM queue_tokens 
+       WHERE business_id = ? AND status = 'serving' 
+       ORDER BY created_at DESC LIMIT 1`,
+      [businessId]
+    );
+    
+    // Get last 5 completed tokens
+    const completedTokens = await allQuery(
+      `SELECT * FROM queue_tokens 
+       WHERE business_id = ? AND status IN ('completed', 'skipped', 'cancelled')
+       ORDER BY completed_at DESC LIMIT 5`,
+      [businessId]
+    );
+    
+    res.json({
+      waiting: waitingTokens,
+      serving: servingToken,
+      completed: completedTokens,
+      waitingCount: waitingTokens.length
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate next token number
+app.get('/api/queue/next-token/:businessId', async (req, res) => {
+  const { businessId } = req.params;
+  
+  try {
+    // Get the highest token number for today
+    const today = new Date().toISOString().split('T')[0];
+    const lastToken = await getQuery(
+      `SELECT MAX(token_number) as max_token FROM queue_tokens 
+       WHERE business_id = ? AND date(created_at) = ?`,
+      [businessId, today]
+    );
+    
+    const nextNumber = (lastToken?.max_token || 0) + 1;
+    res.json({ nextToken: nextNumber });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add a new walk-in customer to queue
+app.post('/api/queue', async (req, res) => {
+  const { businessId, customerName, tokenNumber } = req.body;
+  
+  if (!businessId || !customerName || !tokenNumber) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  try {
+    const result = await runQuery(
+      `INSERT INTO queue_tokens (business_id, customer_name, token_number, status) 
+       VALUES (?, ?, ?, 'waiting')`,
+      [businessId, customerName, tokenNumber]
+    );
+    
+    res.status(201).json({ 
+      message: 'Customer added to queue', 
+      tokenId: result.lastID,
+      tokenNumber: tokenNumber
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Call next customer (update status to serving)
+app.put('/api/queue/call-next/:businessId', async (req, res) => {
+  const { businessId } = req.params;
+  
+  try {
+    // Get the next waiting customer
+    const nextCustomer = await getQuery(
+      `SELECT * FROM queue_tokens 
+       WHERE business_id = ? AND status = 'waiting' 
+       ORDER BY token_number ASC LIMIT 1`,
+      [businessId]
+    );
+    
+    if (!nextCustomer) {
+      return res.status(404).json({ error: 'No customers in queue' });
+    }
+    
+    // Update to serving status
+    await runQuery(
+      `UPDATE queue_tokens SET status = 'serving', called_at = CURRENT_TIMESTAMP 
+       WHERE id = ?`,
+      [nextCustomer.id]
+    );
+    
+    res.json({ 
+      message: 'Next customer called', 
+      customer: nextCustomer 
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Complete serving a customer
+app.put('/api/queue/complete/:tokenId', async (req, res) => {
+  const { tokenId } = req.params;
+  
+  try {
+    await runQuery(
+      `UPDATE queue_tokens SET status = 'completed', completed_at = CURRENT_TIMESTAMP 
+       WHERE id = ?`,
+      [tokenId]
+    );
+    
+    res.json({ message: 'Customer marked as completed' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Skip a customer
+app.put('/api/queue/skip/:tokenId', async (req, res) => {
+  const { tokenId } = req.params;
+  
+  try {
+    await runQuery(
+      `UPDATE queue_tokens SET status = 'skipped', completed_at = CURRENT_TIMESTAMP 
+       WHERE id = ?`,
+      [tokenId]
+    );
+    
+    res.json({ message: 'Customer skipped' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Remove customer from queue (cancel)
+app.delete('/api/queue/:tokenId', async (req, res) => {
+  const { tokenId } = req.params;
+  
+  try {
+    await runQuery(
+      `UPDATE queue_tokens SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP 
+       WHERE id = ?`,
+      [tokenId]
+    );
+    
+    res.json({ message: 'Customer removed from queue' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
