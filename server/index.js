@@ -560,6 +560,93 @@ app.delete('/api/queue/:tokenId', async (req, res) => {
   }
 });
 
+// ============ CUSTOMER QUEUE VIEW ============
+
+// Get queue position for a specific token
+app.get('/api/public/queue-position/:businessId/:tokenNumber', async (req, res) => {
+  const { businessId, tokenNumber } = req.params;
+  
+  try {
+    // Find the token
+    const token = await getQuery(
+      `SELECT * FROM queue_tokens 
+       WHERE business_id = ? AND token_number = ?`,
+      [businessId, tokenNumber]
+    );
+    
+    if (!token) {
+      return res.status(404).json({ error: 'Token not found' });
+    }
+    
+    // Count how many waiting customers are ahead
+    const position = await getQuery(
+      `SELECT COUNT(*) as ahead FROM queue_tokens 
+       WHERE business_id = ? AND status = 'waiting' AND token_number < ?`,
+      [businessId, tokenNumber]
+    );
+    
+    // Get currently serving token
+    const serving = await getQuery(
+      `SELECT token_number, customer_name FROM queue_tokens 
+       WHERE business_id = ? AND status = 'serving' 
+       ORDER BY called_at DESC LIMIT 1`,
+      [businessId]
+    );
+    
+    // Estimate wait time (assuming 10 minutes per customer)
+    const estimatedWaitMinutes = (position?.ahead || 0) * 10;
+    
+    res.json({
+      token: token,
+      positionAhead: position?.ahead || 0,
+      currentServing: serving,
+      estimatedWaitMinutes: estimatedWaitMinutes,
+      status: token.status
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get public queue overview for a business
+app.get('/api/public/queue-overview/:businessId', async (req, res) => {
+  const { businessId } = req.params;
+  
+  try {
+    // Get last 5 called tokens
+    const recent = await allQuery(
+      `SELECT token_number, customer_name, status, called_at, completed_at 
+       FROM queue_tokens 
+       WHERE business_id = ? AND status IN ('serving', 'completed')
+       ORDER BY called_at DESC LIMIT 5`,
+      [businessId]
+    );
+    
+    // Get current waiting count
+    const waitingCount = await getQuery(
+      `SELECT COUNT(*) as count FROM queue_tokens 
+       WHERE business_id = ? AND status = 'waiting'`,
+      [businessId]
+    );
+    
+    // Get currently serving
+    const serving = await getQuery(
+      `SELECT token_number, customer_name FROM queue_tokens 
+       WHERE business_id = ? AND status = 'serving' 
+       ORDER BY called_at DESC LIMIT 1`,
+      [businessId]
+    );
+    
+    res.json({
+      waitingCount: waitingCount?.count || 0,
+      currentlyServing: serving,
+      recentActivity: recent
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

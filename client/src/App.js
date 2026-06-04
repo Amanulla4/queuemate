@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, useParams } from 'react-router-dom';
 import Register from './components/Register';
 import Login from './components/Login';
 import CustomerBooking from './components/CustomerBooking';
+import LiveQueueStatus from './components/LiveQueueStatus';
 import ProfessionalDashboard from './components/ProfessionalDashboard';
 import './index.css';
 
@@ -28,6 +29,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/book/:businessId" element={<CustomerBookingWrapper />} />
+        <Route path="/queue/:businessId" element={<LiveQueueStatusWrapper />} />
         <Route path="/" element={
           isLoggedIn ? (
             <ProfessionalDashboard 
@@ -73,6 +75,11 @@ function App() {
 function CustomerBookingWrapper() {
   const { businessId } = useParams();
   return <CustomerBooking businessId={businessId} />;
+}
+
+function LiveQueueStatusWrapper() {
+  const { businessId } = useParams();
+  return <LiveQueueStatus businessId={businessId} />;
 }
 
 export default App;
